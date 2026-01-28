@@ -1,0 +1,21 @@
+name: demo_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - openai>=1.3.0
+      - langchain>=0.2.12
+      - langchain-openai>=0.1.0
+      - networkx>=3.2
+      - pydantic>=2.6
+      - pdfminer.six>=20231228
+      - python-dotenv>=1.0.1
+      - httpx>=0.27.0
+      # Optional: PaddleOCR for local fallback (heavy, requires paddlepaddle)
+      # - paddleocr>=2.7.0
+      # - paddlepaddle>=2.6.0
+      # Optional: Manim for animation rendering
+      # - manim>=0.18.1
