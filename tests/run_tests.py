@@ -81,9 +81,13 @@ def run_all_tests():
     for module, results in all_results.items():
         if isinstance(results, dict) and "error" not in results:
             passed = sum(1 for v in results.values() if v is True or v == True)
-            total = len(results)
-            status = "✅" if passed == total else "⚠️"
-            print(f"   {status} {module}: {passed}/{total} 通过")
+            skipped = sum(1 for v in results.values() if v == "skipped")
+            total = len(results) - skipped
+            status = "✅" if total == 0 or passed == total else "⚠️"
+            suffix = f"{passed}/{total} 通过"
+            if skipped:
+                suffix += f", {skipped} 跳过"
+            print(f"   {status} {module}: {suffix}")
         else:
             print(f"   ❌ {module}: 异常")
     

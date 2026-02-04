@@ -5,6 +5,8 @@
 """
 import os
 import sys
+import shutil
+import subprocess
 
 # 添加项目根目录到路径
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -107,10 +109,9 @@ def test_animation_module():
     # ========== Test 3: Manim 语法验证 ==========
     print("\n✅ Test 3: Manim 语法验证")
     try:
-        # 尝试导入生成的代码检查语法
-        import subprocess
+        # 使用当前解释器进行语法检查（不依赖 conda 环境）
         result = subprocess.run(
-            ["conda", "run", "-n", "demo_env", "python", "-m", "py_compile", code_path],
+            [sys.executable, "-m", "py_compile", code_path],
             capture_output=True,
             text=True,
             timeout=30
@@ -129,47 +130,51 @@ def test_animation_module():
     # ========== Test 4: Manim 渲染测试 (可选) ==========
     print("\n🎞️ Test 4: Manim 渲染测试")
     try:
-        # 检查 manim 是否可用
-        result = subprocess.run(
-            ["conda", "run", "-n", "demo_env", "manim", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        
-        if result.returncode == 0:
-            print(f"   ✅ Manim 可用: {result.stdout.strip()}")
-            
-            # 尝试渲染（低质量快速测试）
-            print("   🔄 尝试渲染 (低质量)...")
-            render_result = subprocess.run(
-                ["conda", "run", "-n", "demo_env", "manim", "-ql", 
-                 "--disable_caching", "-o", "test_output",
-                 "--media_dir", MEDIA_DIR,
-                 code_path, "KnowledgeGraphAnimation"],
+        manim_bin = shutil.which("manim")
+        if not manim_bin:
+            print("   ⚠️ Manim 不可用，跳过渲染")
+            results["test4_render"] = "skipped"
+        else:
+            result = subprocess.run(
+                [manim_bin, "--version"],
                 capture_output=True,
                 text=True,
-                timeout=120,
-                cwd=output_dir
+                timeout=30
             )
-            
-            if render_result.returncode == 0:
-                print("   ✅ 渲染成功!")
-                # 查找输出文件
-                for root, dirs, files in os.walk(MEDIA_DIR):
-                    for f in files:
-                        if f.endswith('.mp4'):
-                            print(f"   📹 输出: {os.path.join(root, f)}")
-                results["test4_render"] = True
+
+            if result.returncode == 0:
+                print(f"   ✅ Manim 可用: {result.stdout.strip()}")
+
+                # 尝试渲染（低质量快速测试）
+                print("   🔄 尝试渲染 (低质量)...")
+                render_result = subprocess.run(
+                    [manim_bin, "-ql",
+                     "--disable_caching", "-o", "test_output",
+                     "--media_dir", MEDIA_DIR,
+                     code_path, "KnowledgeGraphAnimation"],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    cwd=output_dir
+                )
+
+                if render_result.returncode == 0:
+                    print("   ✅ 渲染成功!")
+                    # 查找输出文件
+                    for root, dirs, files in os.walk(MEDIA_DIR):
+                        for f in files:
+                            if f.endswith('.mp4'):
+                                print(f"   📹 输出: {os.path.join(root, f)}")
+                    results["test4_render"] = True
+                else:
+                    print(f"   ⚠️ 渲染失败 (非致命): {render_result.stderr[:200]}")
+                    results["test4_render"] = False
             else:
-                print(f"   ⚠️ 渲染失败 (非致命): {render_result.stderr[:200]}")
-                results["test4_render"] = False
-        else:
-            print("   ⚠️ Manim 不可用")
-            results["test4_render"] = False
+                print("   ⚠️ Manim 不可用，跳过渲染")
+                results["test4_render"] = "skipped"
     except subprocess.TimeoutExpired:
         print("   ⚠️ 渲染超时 (跳过)")
-        results["test4_render"] = False
+        results["test4_render"] = "skipped"
     except Exception as e:
         print(f"   ⚠️ 渲染异常: {e}")
         results["test4_render"] = False
@@ -221,18 +226,21 @@ def test_animation_module():
     critical_passed = True
     
     for name, passed in results.items():
-        status = "✅ 通过" if passed else "❌ 失败"
+        if passed == "skipped":
+            status = "⚠️ 跳过"
+        else:
+            status = "✅ 通过" if passed else "❌ 失败"
         # 渲染测试是非关键的
         is_critical = name != "test4_render"
         if is_critical:
             print(f"   {name}: {status}")
-            if not passed:
+            if passed is False:
                 critical_passed = False
         else:
-            status = "✅ 通过" if passed else "⚠️ 跳过"
+            status = "✅ 通过" if passed is True else "⚠️ 跳过"
             print(f"   {name}: {status} (可选)")
         
-        if not passed:
+        if passed is False:
             all_passed = False
     
     print()

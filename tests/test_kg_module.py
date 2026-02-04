@@ -137,40 +137,44 @@ def test_kg_module():
     # ========== Test 4: LLM 实体抽取 (真实调用) ==========
     print("\n🤖 Test 4: LLM 实体抽取")
     try:
-        from knowledge_graph.entity_extractor import extract_from_chunk, normalize
-        
-        test_text = """
-        In this paper, we introduce OR-Bench, a comprehensive benchmark for evaluating 
-        over-refusal in large language models. We evaluate GPT-4, Claude-3, and Llama-3 
-        on our benchmark. Results show that GPT-4 achieves the best balance between 
-        safety and helpfulness with an over-refusal rate of 12.3%.
-        """
-        
-        print(f"   📝 测试文本: {test_text[:80]}...")
-        
-        raw_result = extract_from_chunk(test_text)
-        print(f"   📦 原始抽取: {len(raw_result.get('entities', []))} 实体, {len(raw_result.get('triplets', []))} 三元组")
-        
-        # 检查是否有 "raw" 字段（表示 JSON 解析失败）
-        if "raw" in raw_result:
-            print(f"   ⚠️ JSON 解析失败，原始返回: {raw_result['raw'][:200]}...")
-        
-        # 归一化
-        normalized = normalize(raw_result, deduplicate=False)
-        entities = normalized.get("entities", [])
-        triplets = normalized.get("triplets", [])
-        
-        print(f"   ✅ 归一化后: {len(entities)} 有效实体, {len(triplets)} 有效三元组")
-        
-        if entities:
-            for e in entities[:3]:
-                print(f"      - {e.type}: {e.name}")
-        
-        if triplets:
-            for t in triplets[:3]:
-                print(f"      - {t.head.name} --{t.relation}--> {t.tail.name}")
-        
-        results["test4_extraction"] = len(entities) > 0
+        if not os.getenv("AISTUDIO_API_KEY"):
+            print("   ⚠️ 跳过: 缺少 AISTUDIO_API_KEY")
+            results["test4_extraction"] = "skipped"
+        else:
+            from knowledge_graph.entity_extractor import extract_from_chunk, normalize
+
+            test_text = """
+            In this paper, we introduce OR-Bench, a comprehensive benchmark for evaluating 
+            over-refusal in large language models. We evaluate GPT-4, Claude-3, and Llama-3 
+            on our benchmark. Results show that GPT-4 achieves the best balance between 
+            safety and helpfulness with an over-refusal rate of 12.3%.
+            """
+
+            print(f"   📝 测试文本: {test_text[:80]}...")
+
+            raw_result = extract_from_chunk(test_text)
+            print(f"   📦 原始抽取: {len(raw_result.get('entities', []))} 实体, {len(raw_result.get('triplets', []))} 三元组")
+
+            # 检查是否有 "raw" 字段（表示 JSON 解析失败）
+            if "raw" in raw_result:
+                print(f"   ⚠️ JSON 解析失败，原始返回: {raw_result['raw'][:200]}...")
+
+            # 归一化
+            normalized = normalize(raw_result, deduplicate=False)
+            entities = normalized.get("entities", [])
+            triplets = normalized.get("triplets", [])
+
+            print(f"   ✅ 归一化后: {len(entities)} 有效实体, {len(triplets)} 有效三元组")
+
+            if entities:
+                for e in entities[:3]:
+                    print(f"      - {e.type}: {e.name}")
+
+            if triplets:
+                for t in triplets[:3]:
+                    print(f"      - {t.head.name} --{t.relation}--> {t.tail.name}")
+
+            results["test4_extraction"] = len(entities) > 0
     except Exception as ex:
         print(f"   ❌ 异常: {ex}")
         import traceback
@@ -180,38 +184,42 @@ def test_kg_module():
     # ========== Test 5: 完整流程测试 ==========
     print("\n🔄 Test 5: 完整流程 (抽取 → 去重 → 构图)")
     try:
-        from knowledge_graph.entity_extractor import EntityExtractor
-        from knowledge_graph.graph_builder import KnowledgeGraph
-        
-        extractor = EntityExtractor()
-        kg = KnowledgeGraph()
-        
-        # 模拟多个文本块
-        chunks = [
-            "GPT-4 is a large language model developed by OpenAI. It uses transformer architecture.",
-            "The model was evaluated on MMLU dataset and achieved 86.4% accuracy.",
-            "Compared to GPT-3.5, GPT-4 outperforms on most reasoning tasks."
-        ]
-        
-        all_entities = []
-        all_triplets = []
-        
-        for i, chunk in enumerate(chunks):
-            print(f"   处理 chunk {i+1}/{len(chunks)}...")
-            result = extractor.extract_all(chunk, deduplicate=False)
-            all_entities.extend(result.get("entities", []))
-            all_triplets.extend(result.get("triplets", []))
-        
-        print(f"   📊 抽取结果: {len(all_entities)} 实体, {len(all_triplets)} 三元组")
-        
-        # 添加到知识图谱
-        for t in all_triplets:
-            kg.add_triplet(t)
-        
-        kg_dict = kg.to_dict()
-        print(f"   🕸️ 最终图谱: {len(kg_dict['nodes'])} 节点, {len(kg_dict['edges'])} 边")
-        
-        results["test5_pipeline"] = len(kg_dict['nodes']) > 0
+        if not os.getenv("AISTUDIO_API_KEY"):
+            print("   ⚠️ 跳过: 缺少 AISTUDIO_API_KEY")
+            results["test5_pipeline"] = "skipped"
+        else:
+            from knowledge_graph.entity_extractor import EntityExtractor
+            from knowledge_graph.graph_builder import KnowledgeGraph
+
+            extractor = EntityExtractor()
+            kg = KnowledgeGraph()
+
+            # 模拟多个文本块
+            chunks = [
+                "GPT-4 is a large language model developed by OpenAI. It uses transformer architecture.",
+                "The model was evaluated on MMLU dataset and achieved 86.4% accuracy.",
+                "Compared to GPT-3.5, GPT-4 outperforms on most reasoning tasks."
+            ]
+
+            all_entities = []
+            all_triplets = []
+
+            for i, chunk in enumerate(chunks):
+                print(f"   处理 chunk {i+1}/{len(chunks)}...")
+                result = extractor.extract_all(chunk, deduplicate=False)
+                all_entities.extend(result.get("entities", []))
+                all_triplets.extend(result.get("triplets", []))
+
+            print(f"   📊 抽取结果: {len(all_entities)} 实体, {len(all_triplets)} 三元组")
+
+            # 添加到知识图谱
+            for t in all_triplets:
+                kg.add_triplet(t)
+
+            kg_dict = kg.to_dict()
+            print(f"   🕸️ 最终图谱: {len(kg_dict['nodes'])} 节点, {len(kg_dict['edges'])} 边")
+
+            results["test5_pipeline"] = len(kg_dict['nodes']) > 0
     except Exception as ex:
         print(f"   ❌ 异常: {ex}")
         import traceback
@@ -225,9 +233,12 @@ def test_kg_module():
     
     all_passed = True
     for name, passed in results.items():
-        status = "✅ 通过" if passed else "❌ 失败"
+        if passed == "skipped":
+            status = "⚠️ 跳过"
+        else:
+            status = "✅ 通过" if passed else "❌ 失败"
         print(f"   {name}: {status}")
-        if not passed:
+        if passed is False:
             all_passed = False
     
     if all_passed:

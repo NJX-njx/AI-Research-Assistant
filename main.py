@@ -9,16 +9,17 @@ from knowledge_graph.graph_builder import KnowledgeGraph
 from animation.storyboard import storyboard_from_kg
 from animation.manim_generator import generate_code
 
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "outputs")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 
 
 def ensure_dir(p: str):
-    if not os.path.exists(p):
-        os.makedirs(p)
+    os.makedirs(p, exist_ok=True)
 
 
 def build_kg_from_pdfs(pdf_paths: List[str]) -> KnowledgeGraph:
     kg = KnowledgeGraph()
+    if not pdf_paths:
+        raise ValueError("No PDF paths provided.")
     for pdf in pdf_paths:
         text = extract_text_from_pdf(pdf)
         for chunk in chunk_text(text):
@@ -55,4 +56,7 @@ def run_demo(pdf_paths: List[str]):
 if __name__ == "__main__":
     # Example usage: place two small PDFs paths here
     sample_pdfs = []
-    run_demo(sample_pdfs)
+    if sample_pdfs:
+        run_demo(sample_pdfs)
+    else:
+        print("Please provide sample PDF paths to run the demo.")

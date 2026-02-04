@@ -6,6 +6,7 @@
 """
 import os
 import sys
+import importlib.util
 
 # 添加项目根目录到路径
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -14,7 +15,6 @@ sys.path.insert(0, PROJECT_ROOT)
 from extraction.paddleocr_mcp_client import PaddleOCRVLClient
 from extraction.text_extractor import chunk_text
 from extraction.vision_extractor import extract_figure_references, extract_image_paths_from_markdown
-from extraction.image_extractor import PDFImageExtractor, match_images_to_figures
 from utils.vllm_client import VLMClient, analyze_figure_safe
 
 # 测试数据路径
@@ -27,6 +27,19 @@ def test_extraction_pipeline(pdf_path: str = None):
     
     if pdf_path is None:
         pdf_path = TEST_PDF
+
+    def dep_available(module_name: str) -> bool:
+        return importlib.util.find_spec(module_name) is not None
+
+    def skip_all(reason: str):
+        print(f"   ⚠️ 跳过: {reason}")
+        return {
+            "step1_ocr": "skipped",
+            "step2_chunk": "skipped",
+            "step3_figures": "skipped",
+            "step4_images": "skipped",
+            "step5_vlm": "skipped",
+        }
     
     print("=" * 60)
     print("🧪 完整提取流程测试")
@@ -45,6 +58,13 @@ def test_extraction_pipeline(pdf_path: str = None):
     # =========================================
     print("\n📄 Step 1: PaddleOCR-VL 文档解析")
     try:
+        if not dep_available("paddleocr_mcp"):
+            return skip_all("paddleocr_mcp 未安装")
+        if not os.getenv("PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN"):
+            return skip_all("缺少 PADDLEOCR_MCP_AISTUDIO_ACCESS_TOKEN")
+        if not os.path.exists(pdf_path):
+            return skip_all(f"测试 PDF 不存在: {pdf_path}")
+
         ocr_client = PaddleOCRVLClient()
         ocr_result = ocr_client.parse_document_sync(pdf_path)
         
@@ -94,29 +114,35 @@ def test_extraction_pipeline(pdf_path: str = None):
     # Step 4: Image Extraction from PDF
     # =========================================
     print("\n📷 Step 4: PDF 图片提取")
+    images = []
     try:
-        extractor = PDFImageExtractor("output/images")
-        
-        # Try embedded images first
-        images = extractor.extract_images(pdf_path)
-        
-        if len(images) == 0:
-            print("   ⚠️ 无嵌入图片，渲染页面...")
-            # Render pages with figures (typically first few pages)
-            for page_num in [1, 2, 3]:
-                page_img = extractor.extract_page_as_image(pdf_path, page_num, dpi=150)
-                if page_img:
-                    images.append({"path": page_img, "page": page_num, "type": "render"})
-        
-        print(f"   ✅ 成功 - {len(images)} 张图片")
-        
-        # Match images to figures
-        if figure_refs and images:
-            matches = match_images_to_figures(images, figure_refs, markdown)
-            matched_count = sum(1 for v in matches.values() if v.get("image_path"))
-            print(f"   Figure-图片匹配: {matched_count}/{len(matches)}")
-        
-        results["step4_images"] = True
+        if not dep_available("fitz"):
+            print("   ⚠️ 跳过: PyMuPDF (fitz) 未安装")
+            results["step4_images"] = "skipped"
+        else:
+            from extraction.image_extractor import PDFImageExtractor, match_images_to_figures
+            extractor = PDFImageExtractor("output/images")
+
+            # Try embedded images first
+            images = extractor.extract_images(pdf_path)
+
+            if len(images) == 0:
+                print("   ⚠️ 无嵌入图片，渲染页面...")
+                # Render pages with figures (typically first few pages)
+                for page_num in [1, 2, 3]:
+                    page_img = extractor.extract_page_as_image(pdf_path, page_num, dpi=150)
+                    if page_img:
+                        images.append({"path": page_img, "page": page_num, "type": "render"})
+
+            print(f"   ✅ 成功 - {len(images)} 张图片")
+
+            # Match images to figures
+            if figure_refs and images:
+                matches = match_images_to_figures(images, figure_refs, markdown)
+                matched_count = sum(1 for v in matches.values() if v.get("image_path"))
+                print(f"   Figure-图片匹配: {matched_count}/{len(matches)}")
+
+            results["step4_images"] = True
     except Exception as e:
         print(f"   ❌ 异常: {e}")
         import traceback
@@ -127,30 +153,35 @@ def test_extraction_pipeline(pdf_path: str = None):
     # =========================================
     print("\n🔬 Step 5: VLM 图像分析 (含 Fallback)")
     try:
-        vlm = VLMClient()
-        vlm_available = vlm.is_available(force_check=True)
-        print(f"   VLM 服务状态: {'✅ 可用' if vlm_available else '⚠️ 不可用 (将使用 Fallback)'}")
-        
-        # Test with a figure context
-        if figure_refs:
+        if not os.getenv("VLLM_API_KEY") and not os.getenv("AISTUDIO_API_KEY"):
+            print("   ⚠️ 跳过: 缺少 VLM/LLM API Key")
+            results["step5_vlm"] = "skipped"
+        elif not figure_refs:
+            print("   ⚠️ 无 Figure 引用可测试")
+            results["step5_vlm"] = "skipped"
+        else:
+            vlm = VLMClient()
+            vlm_available = vlm.is_available(force_check=True)
+            print(f"   VLM 服务状态: {'✅ 可用' if vlm_available else '⚠️ 不可用 (将使用 Fallback)'}")
+
             fig_id, context, _, _ = figure_refs[0]
-            
+
             # Find corresponding image
             image_path = None
             if images:
                 # Use first page render as test
                 image_path = images[0].get("path")
-            
+
             print(f"   测试分析: {fig_id}")
             result = analyze_figure_safe(
                 image_path=image_path,
                 caption=f"{fig_id}: Over-refusal benchmark results",
                 context_sentences=[context[:200]]
             )
-            
+
             if "_fallback" in result:
-                print(f"   📎 使用 Fallback (纯文本分析)")
-            
+                print("   📎 使用 Fallback (纯文本分析)")
+
             if result.get("entities") or result.get("summary"):
                 print(f"   ✅ 成功 - 实体: {len(result.get('entities', []))}, 关系: {len(result.get('relations', []))}")
                 if result.get("summary"):
@@ -158,9 +189,6 @@ def test_extraction_pipeline(pdf_path: str = None):
                 results["step5_vlm"] = True
             else:
                 print(f"   ⚠️ 结果为空: {result.get('error', 'unknown')}")
-        else:
-            print("   ⚠️ 无 Figure 引用可测试")
-            
     except Exception as e:
         print(f"   ❌ 异常: {e}")
         import traceback
@@ -175,9 +203,12 @@ def test_extraction_pipeline(pdf_path: str = None):
     
     all_passed = True
     for step, passed in results.items():
-        status = "✅ 通过" if passed else "❌ 失败"
+        if passed == "skipped":
+            status = "⚠️ 跳过"
+        else:
+            status = "✅ 通过" if passed else "❌ 失败"
         print(f"   {step}: {status}")
-        if not passed:
+        if passed is False:
             all_passed = False
     
     print()
